@@ -124,7 +124,12 @@ def _instrument(
             start_time = default_timer()
 
             try:
-                result = wrapped_login(self, account=None, app_account=None, flush=True)  # *** PROCEED
+                result = wrapped_login(
+                    self, 
+                    account=account, 
+                    app_account=app_account, 
+                    flush=flush
+                )  # *** PROCEED
             except Exception as exc:  # pylint: disable=W0703
                 exception = exc
                 result = getattr(exc, "response", None)
@@ -170,7 +175,7 @@ def _instrument(
             start_time = default_timer()
 
             try:
-                result = wrapped_close(self, force=False)  # *** PROCEED
+                result = wrapped_close(self, force=force)  # *** PROCEED
             except Exception as exc:  # pylint: disable=W0703
                 exception = exc
                 result = getattr(exc, "response", None)
@@ -263,7 +268,7 @@ def _instrument(
             start_time = default_timer()
 
             try:
-                result = wrapped_execute(self, command, consume=True)  # *** PROCEED
+                result = wrapped_execute(self, command, consume=consume)  # *** PROCEED
             except Exception as exc:  # pylint: disable=W0703
                 exception = exc
                 result = getattr(exc, "response", None)
