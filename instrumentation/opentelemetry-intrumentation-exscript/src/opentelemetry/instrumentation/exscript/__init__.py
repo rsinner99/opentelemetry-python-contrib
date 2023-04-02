@@ -55,7 +55,7 @@ from typing import Callable, Collection, Optional
 
 from Exscript.protocols import Protocol
 
-from opentelemetry import context
+from opentelemetry.trace import set_span_in_context
 
 from opentelemetry.instrumentation.instrumentor import BaseInstrumentor
 from opentelemetry.instrumentation.exscript.package import _instruments
@@ -92,30 +92,83 @@ def _instrument(
     # before v1.0.0, Dec 17, 2012, see
     # https://github.com/psf/requests/commit/4e5c4a6ab7bb0195dececdd19bb8505b872fe120)
 
+    wrapped_connect = Protocol.connect
     wrapped_login = Protocol.login
     wrapped_close = Protocol.close
     wrapped_send = Protocol.send
     wrapped_execute = Protocol.execute
 
+    # connect(self, hostname=None, port=None):
+    @functools.wraps(wrapped_connect)
+    def instrumented_connect(self, hostname=None, port=None):
+        protocol_name = self.__class__.__name__
+        span_name = get_default_span_name(protocol_name, "connect")
+
+        span_attributes = {
+            "protocol.type": protocol_name,
+        }
+        span_attributes.update(get_protocol_attributes(self))
+        if hostname:
+            span_attributes["protocol.host"] = hostname
+        if port:
+            span_attributes["protocol.port"] = hostname
+
+        metric_labels = {
+            "protocol.type": protocol_name,
+        }
+
+        span = tracer.start_span(span_name, kind=SpanKind.CLIENT, attributes=span_attributes)
+
+        exception = None
+        if callable(request_hook):
+            request_hook(span, self)
+
+        start_time = default_timer()
+
+        try:
+            result = wrapped_connect(self, hostname=hostname, port=port)  # *** PROCEED
+        except Exception as exc:  # pylint: disable=W0703
+            exception = exc
+            result = getattr(exc, "response", None)
+        finally:
+            elapsed_time = max(
+                round((default_timer() - start_time) * 1000), 0
+            )
+
+        if callable(response_hook):
+            response_hook(span, self, result)
+
+        duration_histogram.record(elapsed_time, attributes=metric_labels)
+
+        if exception is not None:
+            raise exception.with_traceback(exception.__traceback__)
+        
+        self.opentelemetry_instrumentation_exscript_connect_span = span
+
+        return result
+
     #login(self, account=None, app_account=None, flush=True):
-    # pylint: disable-msg=too-many-locals,too-many-branches
     @functools.wraps(wrapped_login)
     def instrumented_login(self, account=None, app_account=None, flush=True):
+        context = set_span_in_context(get_parent_span(self))
         protocol_name = self.__class__.__name__
         span_name = get_default_span_name(protocol_name, "login")
 
         span_attributes = {
-            "PROTOCOL.TYPE": protocol_name,
-            "PROTOCOL.USERNAME": account.get_name(),
+            "protocol.type": protocol_name,
+            "protocol.username": account.get_name(),
         }
         span_attributes.update(get_protocol_attributes(self))
 
         metric_labels = {
-            "PROTOCOL.TYPE": protocol_name,
+            "protocol.type": protocol_name,
         }
 
         with tracer.start_as_current_span(
-            span_name, kind=SpanKind.CLIENT, attributes=span_attributes
+            span_name, 
+            kind=SpanKind.CLIENT, 
+            attributes=span_attributes,
+            context=context
         ) as span:
             exception = None
             if callable(request_hook):
@@ -156,13 +209,13 @@ def _instrument(
         span_name = get_default_span_name(protocol_name, "close")
 
         span_attributes = {
-            "PROTOCOL.TYPE": protocol_name,
-            "PROTOCOL.FORCE_CLOSE": force,
+            "protocol.type": protocol_name,
+            "protocol.force_close": force,
         }
         span_attributes.update(get_protocol_attributes(self))
 
         metric_labels = {
-            "PROTOCOL.TYPE": protocol_name,
+            "protocol.type": protocol_name,
         }
 
         with tracer.start_as_current_span(
@@ -191,6 +244,9 @@ def _instrument(
 
             if exception is not None:
                 raise exception.with_traceback(exception.__traceback__)
+            
+        parent_span = get_parent_span(self)
+        parent_span.end()
 
         return result
         
@@ -198,21 +254,25 @@ def _instrument(
     # pylint: disable-msg=too-many-locals,too-many-branches
     @functools.wraps(wrapped_send)
     def instrumented_send(self, command):
+        context = set_span_in_context(get_parent_span(self))
         protocol_name = self.__class__.__name__
         span_name = get_default_span_name(protocol_name, "send")
 
         span_attributes = {
-            "PROTOCOL.TYPE": protocol_name,
-            "PROTOCOL.COMMAND": command,
+            "protocol.type": protocol_name,
+            "protocol.command": command,
         }
         span_attributes.update(get_protocol_attributes(self))
 
         metric_labels = {
-            "PROTOCOL.TYPE": protocol_name,
+            "protocol.type": protocol_name,
         }
 
         with tracer.start_as_current_span(
-            span_name, kind=SpanKind.CLIENT, attributes=span_attributes
+            span_name, 
+            kind=SpanKind.CLIENT, 
+            attributes=span_attributes,
+            context=context
         ) as span:
             exception = None
             if callable(request_hook):
@@ -237,29 +297,31 @@ def _instrument(
 
             if exception is not None:
                 raise exception.with_traceback(exception.__traceback__)
-            
-        print(span)
 
         return result
     
 
     @functools.wraps(wrapped_execute)
     def instrumented_execute(self, command, consume=True):
+        context = set_span_in_context(get_parent_span(self))
         protocol_name = self.__class__.__name__
         span_name = get_default_span_name(protocol_name, "execute")
 
         span_attributes = {
-            "PROTOCOL.TYPE": protocol_name,
-            "PROTOCOL.COMMAND": command,
+            "protocol.type": protocol_name,
+            "protocol.command": command,
         }
         span_attributes.update(get_protocol_attributes(self))
 
         metric_labels = {
-            "PROTOCOL.TYPE": protocol_name,
+            "protocol.type": protocol_name,
         }
 
         with tracer.start_as_current_span(
-            span_name, kind=SpanKind.CLIENT, attributes=span_attributes
+            span_name, 
+            kind=SpanKind.CLIENT, 
+            attributes=span_attributes,
+            context=context
         ) as span:
             exception = None
             if callable(request_hook):
@@ -278,7 +340,7 @@ def _instrument(
                 )
 
             span.set_attribute(
-                "PROTOCOL.RESPONSE", result
+                "protocol.response", result
             )
 
             if callable(response_hook):
@@ -289,8 +351,6 @@ def _instrument(
             if exception is not None:
                 raise exception.with_traceback(exception.__traceback__)
             
-        print(span)
-
         return result
 
 
@@ -333,20 +393,28 @@ def get_default_span_name(protocol_name, action):
     return f"{protocol_name.strip()} {action.strip()}"
 
 
+def get_parent_span(self):
+    return getattr(
+        self, 
+        "opentelemetry_instrumentation_exscript_connect_span",
+        None
+    )
+
+
 def get_protocol_attributes(self):
     return {
-        "PROTOCOL.TYPE": self.__class__.__name__,
-        "PROTOCOL.TIMEOUT": self.get_timeout(),
-        "PROTOCOL.CONNECT_TIMEOUT": self.get_connect_timeout(),
-        "PROTOCOL.HOST": self.host,
-        "PROTOCOL.PORT": self.port,
-        "PROTOCOL.OS": self.guess_os(),
-        "PROTOCOL.ENCODING": self.encoding,
-        "PROTOCOL.PROMPT": getattr(self.get_prompt(), "pattern", self.get_prompt()),
-        "PROTOCOL.ERROR_PROMPT": getattr(self.get_error_prompt(), "pattern", self.get_error_prompt()),
-        "PROTOCOL.PROTOCOL_AUTHENTICATED": self.is_protocol_authenticated(),
-        "PROTOCOL.APP_AUTHENTICATED": self.is_app_authenticated(),
-        "PROTOCOL.APP_AUTHORIZED": self.is_app_authorized(),
+        "protocol.type": self.__class__.__name__,
+        "protocol.timeout": self.get_timeout(),
+        "protocol.connect_timeout": self.get_connect_timeout(),
+        "protocol.host": self.host,
+        "protocol.port": self.port,
+        "protocol.os": self.guess_os(),
+        "protocol.encoding": self.encoding,
+        "protocol.prompt": getattr(self.get_prompt(), "pattern", self.get_prompt()),
+        "protocol.error_prompt": getattr(self.get_error_prompt(), "pattern", self.get_error_prompt()),
+        "protocol.protocol_authenticated": self.is_protocol_authenticated(),
+        "protocol.app_authenticated": self.is_app_authenticated(),
+        "protocol.app_authorized": self.is_app_authorized(),
     }
 
 
