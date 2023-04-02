@@ -13,4 +13,4 @@
 # limitations under the License.
 
 #__version__ = "0.39b0.dev"
-__version__ = "0.38b0"
+__version__ = "0.37b0"
