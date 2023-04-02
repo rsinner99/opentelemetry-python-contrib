@@ -52,23 +52,15 @@ import functools
 import types
 from timeit import default_timer
 from typing import Callable, Collection, Optional
-from urllib.parse import urlparse
 
 from Exscript.protocols import Protocol
 
 from opentelemetry import context
 
-# FIXME: fix the importing of this private attribute when the location of the _SUPPRESS_HTTP_INSTRUMENTATION_KEY is defined.
-from opentelemetry.context import _SUPPRESS_HTTP_INSTRUMENTATION_KEY
 from opentelemetry.instrumentation.instrumentor import BaseInstrumentor
-#from opentelemetry.instrumentation.exscript.package import _instruments
-#from opentelemetry.instrumentation.exscript.version import __version__
-from package import _instruments
-from version import __version__
-from opentelemetry.instrumentation.utils import (
-    _SUPPRESS_INSTRUMENTATION_KEY,
-    http_status_to_status_code,
-)
+from opentelemetry.instrumentation.exscript.package import _instruments
+from opentelemetry.instrumentation.exscript.version import __version__
+
 from opentelemetry.metrics import Histogram, get_meter
 from opentelemetry.propagate import inject
 from opentelemetry.semconv.metrics import MetricInstruments
