@@ -355,7 +355,7 @@ def _instrument(
                 )
 
             span.set_attribute(
-                "protocol.response", result
+                "protocol.response", str(result)
             )
 
             if callable(response_hook):
