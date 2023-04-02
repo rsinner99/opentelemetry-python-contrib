@@ -355,7 +355,8 @@ def _instrument(
                 )
 
             span.set_attribute(
-                "protocol.response", str(result)
+                #result is a tuple containing a re.match object as second element
+                "protocol.response", result[1].string 
             )
 
             if callable(response_hook):
