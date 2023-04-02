@@ -164,12 +164,14 @@ def _instrument(
             "protocol.type": protocol_name,
         }
 
-        with tracer.start_as_current_span(
-            span_name, 
-            kind=SpanKind.CLIENT, 
-            attributes=span_attributes,
-            context=context
-        ) as span:
+        span_kwargs = {
+            "kind": SpanKind.CLIENT,
+            "attributes": span_attributes
+        }
+        if context:
+            span_kwargs["context"] = context
+
+        with tracer.start_as_current_span(span_name, **span_kwargs) as span:
             exception = None
             if callable(request_hook):
                 request_hook(span, self)
@@ -219,12 +221,14 @@ def _instrument(
             "protocol.type": protocol_name,
         }
 
-        with tracer.start_as_current_span(
-            span_name, 
-            kind=SpanKind.CLIENT, 
-            attributes=span_attributes,
-            context=context
-        ) as span:
+        span_kwargs = {
+            "kind": SpanKind.CLIENT,
+            "attributes": span_attributes
+        }
+        if context:
+            span_kwargs["context"] = context
+
+        with tracer.start_as_current_span(span_name, **span_kwargs) as span:
             exception = None
             if callable(request_hook):
                 request_hook(span, self)
@@ -275,12 +279,14 @@ def _instrument(
             "protocol.type": protocol_name,
         }
 
-        with tracer.start_as_current_span(
-            span_name, 
-            kind=SpanKind.CLIENT, 
-            attributes=span_attributes,
-            context=context
-        ) as span:
+        span_kwargs = {
+            "kind": SpanKind.CLIENT,
+            "attributes": span_attributes
+        }
+        if context:
+            span_kwargs["context"] = context
+
+        with tracer.start_as_current_span(span_name, **span_kwargs) as span:
             exception = None
             if callable(request_hook):
                 request_hook(span, self)
@@ -324,12 +330,14 @@ def _instrument(
             "protocol.type": protocol_name,
         }
 
-        with tracer.start_as_current_span(
-            span_name, 
-            kind=SpanKind.CLIENT, 
-            attributes=span_attributes,
-            context=context
-        ) as span:
+        span_kwargs = {
+            "kind": SpanKind.CLIENT,
+            "attributes": span_attributes
+        }
+        if context:
+            span_kwargs["context"] = context
+
+        with tracer.start_as_current_span(span_name, **span_kwargs) as span:
             exception = None
             if callable(request_hook):
                 request_hook(span, self)
@@ -361,10 +369,12 @@ def _instrument(
         return result
 
 
+    instrumented_connect.opentelemetry_instrumentation_exscript_applied = True
     instrumented_login.opentelemetry_instrumentation_exscript_applied = True
     instrumented_close.opentelemetry_instrumentation_exscript_applied = True
     instrumented_send.opentelemetry_instrumentation_exscript_applied = True
     instrumented_execute.opentelemetry_instrumentation_exscript_applied = True
+    Protocol.connect = instrumented_connect
     Protocol.login = instrumented_login
     Protocol.close = instrumented_close
     Protocol.send = instrumented_send
