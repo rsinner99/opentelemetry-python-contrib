@@ -354,9 +354,13 @@ def _instrument(
                     round((default_timer() - start_time) * 1000), 0
                 )
 
-            span.set_attribute(
+            try:
                 #result is a tuple containing a re.match object as second element
-                "protocol.response", result[1].string 
+                response =  result[1].string 
+            except:
+                response = str(result)
+            span.set_attribute(
+                "protocol.response", response
             )
 
             if callable(response_hook):
