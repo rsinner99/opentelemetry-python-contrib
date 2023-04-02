@@ -205,6 +205,7 @@ def _instrument(
     #close(self, force=False):
     @functools.wraps(wrapped_close)
     def instrumented_close(self, force=False):
+        context = set_span_in_context(get_parent_span(self))
         protocol_name = self.__class__.__name__
         span_name = get_default_span_name(protocol_name, "close")
 
@@ -219,7 +220,10 @@ def _instrument(
         }
 
         with tracer.start_as_current_span(
-            span_name, kind=SpanKind.CLIENT, attributes=span_attributes
+            span_name, 
+            kind=SpanKind.CLIENT, 
+            attributes=span_attributes,
+            context=context
         ) as span:
             exception = None
             if callable(request_hook):
@@ -246,7 +250,10 @@ def _instrument(
                 raise exception.with_traceback(exception.__traceback__)
             
         parent_span = get_parent_span(self)
-        parent_span.end()
+        try:
+            parent_span.end()
+        except:
+            pass
 
         return result
         
