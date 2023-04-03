@@ -303,6 +303,10 @@ def _instrument(
                     round((default_timer() - start_time) * 1000), 0
                 )
 
+            span.set_attribute(
+                "protocol.response", str(self.response)
+            )
+
             if callable(response_hook):
                 response_hook(span, self, result)
 
@@ -354,13 +358,13 @@ def _instrument(
                     round((default_timer() - start_time) * 1000), 0
                 )
 
-            try:
-                #result is a tuple containing a re.match object as second element
-                response =  result[1].string 
-            except:
-                response = str(result)
+            # try:
+            #     #result is a tuple containing a re.match object as second element
+            #     response =  result[1].string 
+            # except:
+            #     response = str(result)
             span.set_attribute(
-                "protocol.response", response
+                "protocol.response", str(self.response)
             )
 
             if callable(response_hook):
