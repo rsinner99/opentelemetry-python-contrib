@@ -111,7 +111,7 @@ def _instrument(
         if hostname:
             span_attributes["protocol.host"] = hostname
         if port:
-            span_attributes["protocol.port"] = hostname
+            span_attributes["protocol.port"] = port
 
         metric_labels = {
             "protocol.type": protocol_name,
