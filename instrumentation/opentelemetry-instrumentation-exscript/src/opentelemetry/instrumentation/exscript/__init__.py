@@ -53,7 +53,7 @@ import types
 from timeit import default_timer
 from typing import Callable, Collection, Optional
 
-from Exscript.protocols import Protocol
+from Exscript.protocols import Protocol, Netconf
 
 from opentelemetry.trace import set_span_in_context
 
@@ -388,6 +388,306 @@ def _instrument(
     Protocol.close = instrumented_close
     Protocol.send = instrumented_send
     Protocol.execute = instrumented_execute
+
+
+
+    netconf_wrapped_connect = Netconf.connect
+    netconf_wrapped_login = Netconf.login
+    netconf_wrapped_close = Netconf.close
+    netconf_wrapped_send = Netconf.send
+    netconf_wrapped_execute = Netconf.execute
+
+    # connect(self, hostname=None, port=None):
+    @functools.wraps(netconf_wrapped_connect)
+    def netconf_instrumented_connect(self, hostname=None, port=None):
+        protocol_name = self.__class__.__name__
+        span_name = get_default_span_name(protocol_name, "connect")
+
+        span_attributes = {
+            "protocol.type": protocol_name,
+        }
+        span_attributes.update(get_protocol_attributes(self))
+        if hostname:
+            span_attributes["protocol.host"] = hostname
+        if port:
+            span_attributes["protocol.port"] = port
+
+        metric_labels = {
+            "protocol.type": protocol_name,
+        }
+
+        span = tracer.start_span(span_name, kind=SpanKind.CLIENT, attributes=span_attributes)
+
+        exception = None
+        if callable(request_hook):
+            request_hook(span, self)
+
+        start_time = default_timer()
+
+        try:
+            result = netconf_wrapped_connect(self, hostname=hostname, port=port)  # *** PROCEED
+        except Exception as exc:  # pylint: disable=W0703
+            exception = exc
+            result = getattr(exc, "response", None)
+        finally:
+            elapsed_time = max(
+                round((default_timer() - start_time) * 1000), 0
+            )
+
+        if callable(response_hook):
+            response_hook(span, self, result)
+
+        duration_histogram.record(elapsed_time, attributes=metric_labels)
+
+        if exception is not None:
+            raise exception.with_traceback(exception.__traceback__)
+        
+        self.opentelemetry_instrumentation_exscript_connect_span = span
+
+        return result
+
+    #login(self, account=None, app_account=None, flush=True):
+    @functools.wraps(netconf_wrapped_login)
+    def netconf_instrumented_login(self, account=None, app_account=None, flush=True):
+        context = set_span_in_context(get_parent_span(self))
+        protocol_name = self.__class__.__name__
+        span_name = get_default_span_name(protocol_name, "login")
+
+        span_attributes = {
+            "protocol.type": protocol_name,
+            "protocol.username": account.get_name(),
+        }
+        span_attributes.update(get_protocol_attributes(self))
+
+        metric_labels = {
+            "protocol.type": protocol_name,
+        }
+
+        span_kwargs = {
+            "kind": SpanKind.CLIENT,
+            "attributes": span_attributes
+        }
+        if context:
+            span_kwargs["context"] = context
+
+        with tracer.start_as_current_span(span_name, **span_kwargs) as span:
+            exception = None
+            if callable(request_hook):
+                request_hook(span, self)
+
+            start_time = default_timer()
+
+            try:
+                result = netconf_wrapped_login(
+                    self, 
+                    account=account, 
+                    app_account=app_account, 
+                    flush=flush
+                )  # *** PROCEED
+            except Exception as exc:  # pylint: disable=W0703
+                exception = exc
+                result = getattr(exc, "response", None)
+            finally:
+                elapsed_time = max(
+                    round((default_timer() - start_time) * 1000), 0
+                )
+
+            if callable(response_hook):
+                response_hook(span, self, result)
+
+            duration_histogram.record(elapsed_time, attributes=metric_labels)
+
+            if exception is not None:
+                raise exception.with_traceback(exception.__traceback__)
+
+        return result
+    
+
+    #close(self, force=False):
+    @functools.wraps(netconf_wrapped_close)
+    def netconf_instrumented_close(self, force=False):
+        context = set_span_in_context(get_parent_span(self))
+        protocol_name = self.__class__.__name__
+        span_name = get_default_span_name(protocol_name, "close")
+
+        span_attributes = {
+            "protocol.type": protocol_name,
+            "protocol.force_close": force,
+        }
+        span_attributes.update(get_protocol_attributes(self))
+
+        metric_labels = {
+            "protocol.type": protocol_name,
+        }
+
+        span_kwargs = {
+            "kind": SpanKind.CLIENT,
+            "attributes": span_attributes
+        }
+        if context:
+            span_kwargs["context"] = context
+
+        with tracer.start_as_current_span(span_name, **span_kwargs) as span:
+            exception = None
+            if callable(request_hook):
+                request_hook(span, self)
+
+            start_time = default_timer()
+
+            try:
+                result = netconf_wrapped_close(self, force=force)  # *** PROCEED
+            except Exception as exc:  # pylint: disable=W0703
+                exception = exc
+                result = getattr(exc, "response", None)
+            finally:
+                elapsed_time = max(
+                    round((default_timer() - start_time) * 1000), 0
+                )
+
+            if callable(response_hook):
+                response_hook(span, self, result)
+
+            duration_histogram.record(elapsed_time, attributes=metric_labels)
+
+            if exception is not None:
+                raise exception.with_traceback(exception.__traceback__)
+            
+        parent_span = get_parent_span(self)
+        try:
+            parent_span.end()
+        except:
+            pass
+
+        return result
+        
+
+    # pylint: disable-msg=too-many-locals,too-many-branches
+    @functools.wraps(netconf_wrapped_send)
+    def netconf_instrumented_send(self, command):
+        context = set_span_in_context(get_parent_span(self))
+        protocol_name = self.__class__.__name__
+        span_name = get_default_span_name(protocol_name, "send")
+
+        span_attributes = {
+            "protocol.type": protocol_name,
+            "protocol.command": command,
+        }
+        span_attributes.update(get_protocol_attributes(self))
+
+        metric_labels = {
+            "protocol.type": protocol_name,
+        }
+
+        span_kwargs = {
+            "kind": SpanKind.CLIENT,
+            "attributes": span_attributes
+        }
+        if context:
+            span_kwargs["context"] = context
+
+        with tracer.start_as_current_span(span_name, **span_kwargs) as span:
+            exception = None
+            if callable(request_hook):
+                request_hook(span, self)
+
+            start_time = default_timer()
+
+            try:
+                result = netconf_wrapped_send(self, command)  # *** PROCEED
+            except Exception as exc:  # pylint: disable=W0703
+                exception = exc
+                result = getattr(exc, "response", None)
+            finally:
+                elapsed_time = max(
+                    round((default_timer() - start_time) * 1000), 0
+                )
+
+            span.set_attribute(
+                "protocol.response", str(self.response)
+            )
+
+            if callable(response_hook):
+                response_hook(span, self, result)
+
+            duration_histogram.record(elapsed_time, attributes=metric_labels)
+
+            if exception is not None:
+                raise exception.with_traceback(exception.__traceback__)
+
+        return result
+    
+
+    @functools.wraps(netconf_wrapped_execute)
+    def netconf_instrumented_execute(self, command):
+        context = set_span_in_context(get_parent_span(self))
+        protocol_name = self.__class__.__name__
+        span_name = get_default_span_name(protocol_name, "execute")
+
+        span_attributes = {
+            "protocol.type": protocol_name,
+            "protocol.command": command,
+        }
+        span_attributes.update(get_protocol_attributes(self))
+
+        metric_labels = {
+            "protocol.type": protocol_name,
+        }
+
+        span_kwargs = {
+            "kind": SpanKind.CLIENT,
+            "attributes": span_attributes
+        }
+        if context:
+            span_kwargs["context"] = context
+
+        with tracer.start_as_current_span(span_name, **span_kwargs) as span:
+            exception = None
+            if callable(request_hook):
+                request_hook(span, self)
+
+            start_time = default_timer()
+
+            try:
+                result = netconf_wrapped_execute(self, command)  # *** PROCEED
+            except Exception as exc:  # pylint: disable=W0703
+                exception = exc
+                result = getattr(exc, "response", None)
+            finally:
+                elapsed_time = max(
+                    round((default_timer() - start_time) * 1000), 0
+                )
+
+            # try:
+            #     #result is a tuple containing a re.match object as second element
+            #     response =  result[1].string 
+            # except:
+            #     response = str(result)
+            span.set_attribute(
+                "protocol.response", str(self.response)
+            )
+
+            if callable(response_hook):
+                response_hook(span, self, result)
+
+            duration_histogram.record(elapsed_time, attributes=metric_labels)
+
+            if exception is not None:
+                raise exception.with_traceback(exception.__traceback__)
+            
+        return result
+
+
+    netconf_instrumented_connect.opentelemetry_instrumentation_exscript_applied = True
+    netconf_instrumented_login.opentelemetry_instrumentation_exscript_applied = True
+    netconf_instrumented_close.opentelemetry_instrumentation_exscript_applied = True
+    netconf_instrumented_send.opentelemetry_instrumentation_exscript_applied = True
+    netconf_instrumented_execute.opentelemetry_instrumentation_exscript_applied = True
+    Netconf.connect = netconf_instrumented_connect
+    Netconf.login = netconf_instrumented_login
+    Netconf.close = netconf_instrumented_close
+    Netconf.send = netconf_instrumented_send
+    Netconf.execute = netconf_instrumented_execute
+
 
 
 
