@@ -16,7 +16,7 @@
 
 from collections import namedtuple
 from platform import python_implementation
-from unittest import mock
+from unittest import mock, skipIf
 
 from opentelemetry.instrumentation.system_metrics import (
     SystemMetricsInstrumentor,
@@ -96,7 +96,6 @@ class TestSystemMetrics(TestBase):
             for scope_metrics in resource_metrics.scope_metrics:
                 for metric in scope_metrics.metrics:
                     metric_names.append(metric.name)
-        self.assertEqual(len(metric_names), 18)
 
         observer_names = [
             "system.cpu.time",
@@ -114,10 +113,20 @@ class TestSystemMetrics(TestBase):
             "system.network.io",
             "system.network.connections",
             "system.thread_count",
-            f"runtime.{self.implementation}.memory",
-            f"runtime.{self.implementation}.cpu_time",
-            f"runtime.{self.implementation}.gc_count",
+            f"process.runtime.{self.implementation}.memory",
+            f"process.runtime.{self.implementation}.cpu_time",
+            f"process.runtime.{self.implementation}.thread_count",
+            f"process.runtime.{self.implementation}.context_switches",
+            f"process.runtime.{self.implementation}.cpu.utilization",
         ]
+
+        if self.implementation == "pypy":
+            self.assertEqual(len(metric_names), 20)
+        else:
+            self.assertEqual(len(metric_names), 21)
+        observer_names.append(
+            f"process.runtime.{self.implementation}.gc_count",
+        )
 
         for observer in metric_names:
             self.assertIn(observer, observer_names)
@@ -125,10 +134,15 @@ class TestSystemMetrics(TestBase):
 
     def test_runtime_metrics_instrument(self):
         runtime_config = {
-            "runtime.memory": ["rss", "vms"],
-            "runtime.cpu.time": ["user", "system"],
-            "runtime.gc_count": None,
+            "process.runtime.memory": ["rss", "vms"],
+            "process.runtime.cpu.time": ["user", "system"],
+            "process.runtime.thread_count": None,
+            "process.runtime.cpu.utilization": None,
+            "process.runtime.context_switches": ["involuntary", "voluntary"],
         }
+
+        if self.implementation != "pypy":
+            runtime_config["process.runtime.gc_count"] = None
 
         reader = InMemoryMetricReader()
         meter_provider = MeterProvider(metric_readers=[reader])
@@ -140,13 +154,22 @@ class TestSystemMetrics(TestBase):
             for scope_metrics in resource_metrics.scope_metrics:
                 for metric in scope_metrics.metrics:
                     metric_names.append(metric.name)
-        self.assertEqual(len(metric_names), 3)
 
         observer_names = [
-            f"runtime.{self.implementation}.memory",
-            f"runtime.{self.implementation}.cpu_time",
-            f"runtime.{self.implementation}.gc_count",
+            f"process.runtime.{self.implementation}.memory",
+            f"process.runtime.{self.implementation}.cpu_time",
+            f"process.runtime.{self.implementation}.thread_count",
+            f"process.runtime.{self.implementation}.context_switches",
+            f"process.runtime.{self.implementation}.cpu.utilization",
         ]
+
+        if self.implementation == "pypy":
+            self.assertEqual(len(metric_names), 5)
+        else:
+            self.assertEqual(len(metric_names), 6)
+        observer_names.append(
+            f"process.runtime.{self.implementation}.gc_count"
+        )
 
         for observer in metric_names:
             self.assertIn(observer, observer_names)
@@ -750,7 +773,9 @@ class TestSystemMetrics(TestBase):
             _SystemMetricsResult({"type": "rss"}, 1),
             _SystemMetricsResult({"type": "vms"}, 2),
         ]
-        self._test_metrics(f"runtime.{self.implementation}.memory", expected)
+        self._test_metrics(
+            f"process.runtime.{self.implementation}.memory", expected
+        )
 
     @mock.patch("psutil.Process.cpu_times")
     def test_runtime_cpu_time(self, mock_process_cpu_times):
@@ -764,9 +789,14 @@ class TestSystemMetrics(TestBase):
             _SystemMetricsResult({"type": "user"}, 1.1),
             _SystemMetricsResult({"type": "system"}, 2.2),
         ]
-        self._test_metrics(f"runtime.{self.implementation}.cpu_time", expected)
+        self._test_metrics(
+            f"process.runtime.{self.implementation}.cpu_time", expected
+        )
 
     @mock.patch("gc.get_count")
+    @skipIf(
+        python_implementation().lower() == "pypy", "not supported for pypy"
+    )
     def test_runtime_get_count(self, mock_gc_get_count):
         mock_gc_get_count.configure_mock(**{"return_value": (1, 2, 3)})
 
@@ -775,4 +805,40 @@ class TestSystemMetrics(TestBase):
             _SystemMetricsResult({"count": "1"}, 2),
             _SystemMetricsResult({"count": "2"}, 3),
         ]
-        self._test_metrics(f"runtime.{self.implementation}.gc_count", expected)
+        self._test_metrics(
+            f"process.runtime.{self.implementation}.gc_count", expected
+        )
+
+    @mock.patch("psutil.Process.num_ctx_switches")
+    def test_runtime_context_switches(self, mock_process_num_ctx_switches):
+        PCtxSwitches = namedtuple("PCtxSwitches", ["voluntary", "involuntary"])
+
+        mock_process_num_ctx_switches.configure_mock(
+            **{"return_value": PCtxSwitches(voluntary=1, involuntary=2)}
+        )
+
+        expected = [
+            _SystemMetricsResult({"type": "voluntary"}, 1),
+            _SystemMetricsResult({"type": "involuntary"}, 2),
+        ]
+        self._test_metrics(
+            f"process.runtime.{self.implementation}.context_switches", expected
+        )
+
+    @mock.patch("psutil.Process.num_threads")
+    def test_runtime_thread_num(self, mock_process_thread_num):
+        mock_process_thread_num.configure_mock(**{"return_value": 42})
+
+        expected = [_SystemMetricsResult({}, 42)]
+        self._test_metrics(
+            f"process.runtime.{self.implementation}.thread_count", expected
+        )
+
+    @mock.patch("psutil.Process.cpu_percent")
+    def test_runtime_cpu_percent(self, mock_process_cpu_percent):
+        mock_process_cpu_percent.configure_mock(**{"return_value": 42})
+
+        expected = [_SystemMetricsResult({}, 42)]
+        self._test_metrics(
+            f"process.runtime.{self.implementation}.cpu.utilization", expected
+        )

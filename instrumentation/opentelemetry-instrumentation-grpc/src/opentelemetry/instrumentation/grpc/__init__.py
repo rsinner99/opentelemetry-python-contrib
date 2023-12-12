@@ -434,6 +434,8 @@ class GrpcInstrumentorClient(BaseInstrumentor):
             else:
                 filter_ = any_of(filter_, excluded_service_filter)
         self._filter = filter_
+        self._request_hook = None
+        self._response_hook = None
 
     # Figures out which channel type we need to wrap
     def _which_channel(self, kwargs):
@@ -455,6 +457,8 @@ class GrpcInstrumentorClient(BaseInstrumentor):
         return _instruments
 
     def _instrument(self, **kwargs):
+        self._request_hook = kwargs.get("request_hook")
+        self._response_hook = kwargs.get("response_hook")
         for ctype in self._which_channel(kwargs):
             _wrap(
                 "grpc",
@@ -469,11 +473,15 @@ class GrpcInstrumentorClient(BaseInstrumentor):
     def wrapper_fn(self, original_func, instance, args, kwargs):
         channel = original_func(*args, **kwargs)
         tracer_provider = kwargs.get("tracer_provider")
+        request_hook = self._request_hook
+        response_hook = self._response_hook
         return intercept_channel(
             channel,
             client_interceptor(
                 tracer_provider=tracer_provider,
                 filter_=self._filter,
+                request_hook=request_hook,
+                response_hook=response_hook,
             ),
         )
 
@@ -499,6 +507,8 @@ class GrpcAioInstrumentorClient(BaseInstrumentor):
             else:
                 filter_ = any_of(filter_, excluded_service_filter)
         self._filter = filter_
+        self._request_hook = None
+        self._response_hook = None
 
     def instrumentation_dependencies(self) -> Collection[str]:
         return _instruments
@@ -507,13 +517,19 @@ class GrpcAioInstrumentorClient(BaseInstrumentor):
         if "interceptors" in kwargs and kwargs["interceptors"]:
             kwargs["interceptors"] = (
                 aio_client_interceptors(
-                    tracer_provider=tracer_provider, filter_=self._filter
+                    tracer_provider=tracer_provider,
+                    filter_=self._filter,
+                    request_hook=self._request_hook,
+                    response_hook=self._response_hook,
                 )
                 + kwargs["interceptors"]
             )
         else:
             kwargs["interceptors"] = aio_client_interceptors(
-                tracer_provider=tracer_provider, filter_=self._filter
+                tracer_provider=tracer_provider,
+                filter_=self._filter,
+                request_hook=self._request_hook,
+                response_hook=self._response_hook,
             )
 
         return kwargs
@@ -521,6 +537,8 @@ class GrpcAioInstrumentorClient(BaseInstrumentor):
     def _instrument(self, **kwargs):
         self._original_insecure = grpc.aio.insecure_channel
         self._original_secure = grpc.aio.secure_channel
+        self._request_hook = kwargs.get("request_hook")
+        self._response_hook = kwargs.get("response_hook")
         tracer_provider = kwargs.get("tracer_provider")
 
         def insecure(*args, **kwargs):
@@ -541,7 +559,9 @@ class GrpcAioInstrumentorClient(BaseInstrumentor):
         grpc.aio.secure_channel = self._original_secure
 
 
-def client_interceptor(tracer_provider=None, filter_=None):
+def client_interceptor(
+    tracer_provider=None, filter_=None, request_hook=None, response_hook=None
+):
     """Create a gRPC client channel interceptor.
 
     Args:
@@ -556,9 +576,19 @@ def client_interceptor(tracer_provider=None, filter_=None):
     """
     from . import _client
 
-    tracer = trace.get_tracer(__name__, __version__, tracer_provider)
+    tracer = trace.get_tracer(
+        __name__,
+        __version__,
+        tracer_provider,
+        schema_url="https://opentelemetry.io/schemas/1.11.0",
+    )
 
-    return _client.OpenTelemetryClientInterceptor(tracer, filter_=filter_)
+    return _client.OpenTelemetryClientInterceptor(
+        tracer,
+        filter_=filter_,
+        request_hook=request_hook,
+        response_hook=response_hook,
+    )
 
 
 def server_interceptor(tracer_provider=None, filter_=None):
@@ -576,12 +606,19 @@ def server_interceptor(tracer_provider=None, filter_=None):
     """
     from . import _server
 
-    tracer = trace.get_tracer(__name__, __version__, tracer_provider)
+    tracer = trace.get_tracer(
+        __name__,
+        __version__,
+        tracer_provider,
+        schema_url="https://opentelemetry.io/schemas/1.11.0",
+    )
 
     return _server.OpenTelemetryServerInterceptor(tracer, filter_=filter_)
 
 
-def aio_client_interceptors(tracer_provider=None, filter_=None):
+def aio_client_interceptors(
+    tracer_provider=None, filter_=None, request_hook=None, response_hook=None
+):
     """Create a gRPC client channel interceptor.
 
     Args:
@@ -592,13 +629,38 @@ def aio_client_interceptors(tracer_provider=None, filter_=None):
     """
     from . import _aio_client
 
-    tracer = trace.get_tracer(__name__, __version__, tracer_provider)
+    tracer = trace.get_tracer(
+        __name__,
+        __version__,
+        tracer_provider,
+        schema_url="https://opentelemetry.io/schemas/1.11.0",
+    )
 
     return [
-        _aio_client.UnaryUnaryAioClientInterceptor(tracer, filter_=filter_),
-        _aio_client.UnaryStreamAioClientInterceptor(tracer, filter_=filter_),
-        _aio_client.StreamUnaryAioClientInterceptor(tracer, filter_=filter_),
-        _aio_client.StreamStreamAioClientInterceptor(tracer, filter_=filter_),
+        _aio_client.UnaryUnaryAioClientInterceptor(
+            tracer,
+            filter_=filter_,
+            request_hook=request_hook,
+            response_hook=response_hook,
+        ),
+        _aio_client.UnaryStreamAioClientInterceptor(
+            tracer,
+            filter_=filter_,
+            request_hook=request_hook,
+            response_hook=response_hook,
+        ),
+        _aio_client.StreamUnaryAioClientInterceptor(
+            tracer,
+            filter_=filter_,
+            request_hook=request_hook,
+            response_hook=response_hook,
+        ),
+        _aio_client.StreamStreamAioClientInterceptor(
+            tracer,
+            filter_=filter_,
+            request_hook=request_hook,
+            response_hook=response_hook,
+        ),
     ]
 
 
@@ -613,7 +675,12 @@ def aio_server_interceptor(tracer_provider=None, filter_=None):
     """
     from . import _aio_server
 
-    tracer = trace.get_tracer(__name__, __version__, tracer_provider)
+    tracer = trace.get_tracer(
+        __name__,
+        __version__,
+        tracer_provider,
+        schema_url="https://opentelemetry.io/schemas/1.11.0",
+    )
 
     return _aio_server.OpenTelemetryAioServerInterceptor(
         tracer, filter_=filter_
